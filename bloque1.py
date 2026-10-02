@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 # Partidos
 matches = pd.read_csv("datasetsWC26/matches_mundial2026.csv", sep=";")
@@ -15,6 +16,7 @@ register = pd.read_csv("datasetsWC26/2026match_register.csv", sep=";")
 
 # Todos
 teams = pd.read_csv("datasetsWC26/2026nationalteams.csv", sep=",")
+teams = teams.dropna(subset=["team_id"]) # En teams hay varias filas con team_id nulo
 
 # Creo un diccionario con el nombre y todos los datasets para utilizar en un bucle
 datasets = {
@@ -103,6 +105,10 @@ partidos = partidos.rename(columns={
     "team_name_y": "seleccion_visitante"
 })
 
+# Actualizamos columnas de prorroga y penaltis
+partidos["prorroga"] = partidos["prorroga"].map({"Regular": "NO", "AET": "SI", "Penalties": "SI"})
+partidos["penalty_local"] = partidos["penalty_local"].fillna(0)
+partidos["penalty_visitante"] = partidos["penalty_visitante"].fillna(0)
 
 partidos.index = range(1, len(partidos) + 1)
 partidos.index.name = "index_partido"
@@ -161,4 +167,43 @@ eventos.index.name = "index_evento"
 print(eventos)
 
 
+datasets_new = {"partidos": partidos, "jugadores": jugadores, "eventos": eventos}
 
+for nombre, df in datasets_new.items():
+    print("=" * 60)
+    print(nombre)
+    print("=" * 60)
+    print(df.info())
+    print(df.describe(include="all"))
+    print("Duplicados:", df.duplicated().sum())
+
+    print("\nRESUMEN POR COLUMNAS:")
+    resumen = pd.DataFrame({
+    "dtype": df.dtypes.astype(str),
+    "nulos": df.isna().sum(),
+    "pct_nulos": df.isna().mean().mul(100).round(2),
+    "n_unicos": df.nunique(dropna=False)})
+    print(resumen)
+
+
+# TRATAMIENTO
+
+# Partidos
+# 1 árbitro nulo
+partidos["arbitro_partido"] = partidos["arbitro_partido"].fillna("Desconocido")
+
+# Jugadores
+# Hay muchos nulos en columnas numéricas (goles, asistencias,...)
+# Tiene sentido que los nulos sean en realidad 0, por lo que sustituimos los valores
+columnas_nulos =["paradas", "goles_concedidos", "goles", "asistencias", "tarjetas_amarillas", "tarjetas_rojas"]
+for columna in columnas_nulos:
+    jugadores[columna] = jugadores[columna].fillna(0)
+
+# Eventos
+
+# Minutos anómalos --> Hay minutos negativos o por encima de la duración del partido que ponemos como nulos para imputarlos más adelante
+eventos.loc[(eventos["minuto_evento"] < 0) | (eventos["minuto_evento"] > 130), "minuto_evento"] = np.nan
+
+eventos["tipo_evento"].unique() # Vemos que VAR review y review VAR son lo mismo
+eventos["tipo_evento"] = eventos["tipo_evento"].replace({"Review VAR": "VAR Review"})
+eventos["tipo_evento"].unique()
