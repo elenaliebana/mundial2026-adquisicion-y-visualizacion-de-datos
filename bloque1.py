@@ -1,5 +1,3 @@
-
-
 import pandas as pd
 
 # Partidos
@@ -72,7 +70,10 @@ print(referees["check_id"].value_counts())
 
 # Como al ver los valores todos son 'True' (la columna está duplicada), eliminamos una de ellas y check_id
 referees = referees.drop(columns=["referee_id.1", "check_id"])
-referees
+
+# Crear dataframe de partidos
+partidos = matches["fecha_partido", "home_score", "away_score", "result_type", "home_penalty_score", "away_penalty_score", "referee_id"]
+
 
 
 
