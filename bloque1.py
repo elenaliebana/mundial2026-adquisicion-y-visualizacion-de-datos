@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import re
 
 # Partidos
 matches = pd.read_csv("datasetsWC26/matches_mundial2026.csv", sep=";")
@@ -207,3 +208,96 @@ eventos.loc[(eventos["minuto_evento"] < 0) | (eventos["minuto_evento"] > 130), "
 eventos["tipo_evento"].unique() # Vemos que VAR review y review VAR son lo mismo
 eventos["tipo_evento"] = eventos["tipo_evento"].replace({"Review VAR": "VAR Review"})
 eventos["tipo_evento"].unique()
+
+# Fechas
+import re
+
+MESES_LISTA = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+               "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+MESES_ES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
+}
+MESES_EN = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8,
+    "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "june": 6, "july": 7,
+    "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+def actualizar_fecha(texto):
+    fecha = str(texto).strip()
+
+    # 2026-06-19T19:00:00Z 
+    pattern = re.match(r"(\d{4})-(\d{2})-(\d{2})T", fecha)
+    if pattern:
+        anio, mes, dia = pattern.groups()
+        return int(dia), int(mes), int(anio)
+
+    # 20260619 
+    pattern = re.match(r"(\d{4})(\d{2})(\d{2})$", fecha)
+    if pattern:
+        anio, mes, dia = pattern.groups()
+        return int(dia), int(mes), int(anio)
+
+    # 25-jun-26
+    pattern = re.match(r"(\d{1,2})-([a-zA-Z]{3})-(\d{2})$", fecha)
+    if pattern:
+        dia, mes_txt, anio = pattern.groups()
+        return int(dia), MESES_EN[mes_txt.lower()], 2000 + int(anio)
+
+    # 06-21-2026  
+    pattern = re.match(r"(\d{2})-(\d{2})-(\d{4})$", fecha)
+    if pattern:
+        mes, dia, anio = pattern.groups()
+        return int(dia), int(mes), int(anio)
+
+    # 26.06.2026 
+    pattern = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})$", fecha)
+    if pattern:
+        dia, mes, anio = pattern.groups()
+        return int(dia), int(mes), int(anio)
+
+    # 27/06/2026 
+    pattern = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})$", fecha)
+    if pattern:
+        a, b, anio = pattern.groups()
+        a, b, anio = int(a), int(b), int(anio)
+        # El Mundial solo se juega en junio (6) y julio (7)
+
+        if b in (6, 7):
+            dia, mes = a, b
+        else:
+            dia, mes = b, a
+        return dia, mes, anio
+
+    # Jun 20 2026  
+    pattern = re.match(r"([a-zA-Z]{3})\s+(\d{1,2})\s+(\d{4})$", fecha)
+    if pattern:
+        mes_txt, dia, anio = pattern.groups()
+        return int(dia), MESES_EN[mes_txt.lower()], int(anio)
+
+    # June 22, 2026  
+    pattern = re.match(r"([a-zA-Z]+)\s+(\d{1,2}),\s*(\d{4})$", fecha)
+    if pattern:
+        mes_txt, dia, anio = pattern.groups()
+        return int(dia), MESES_EN[mes_txt.lower()], int(anio)
+
+    # 21 June 2026  
+    pattern = re.match(r"(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})$", fecha)
+    if pattern:
+        dia, mes_txt, anio = pattern.groups()
+        return int(dia), MESES_EN[mes_txt.lower()], int(anio)
+
+    # 20 de junio de 2026
+    pattern = re.match(r"(\d{1,2}) de ([a-zA-Zñ]+) de (\d{4})$", fecha)
+    if pattern:
+        dia, mes_txt, anio = pattern.groups()
+        return int(dia), MESES_ES[mes_txt.lower()], int(anio)
+
+def formato_fecha(resultado):
+    dia, mes, anio = resultado
+    return f"{dia:02d}/{MESES_LISTA[mes - 1]}/{anio % 100:02d}"
+
+partidos["fecha_partido"] = partidos["fecha_partido"].apply(actualizar_fecha).apply(formato_fecha)
