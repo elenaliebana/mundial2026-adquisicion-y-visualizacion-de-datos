@@ -300,4 +300,23 @@ def formato_fecha(resultado):
     dia, mes, anio = resultado
     return f"{dia:02d}/{MESES_LISTA[mes - 1]}/{anio % 100:02d}"
 
+# IMPUTACIÓN
+# Imputación por la Media: valor mercado
+
 partidos["fecha_partido"] = partidos["fecha_partido"].apply(actualizar_fecha).apply(formato_fecha)
+
+medias = jugadores.groupby("seleccion_nacional")["valor_mercado"].mean()
+
+medias_tabla = medias.reset_index() 
+
+medias_tabla.rename(columns={"valor_mercado": "valor_media"}, inplace = True)
+
+jugadores = pd.merge(jugadores, medias_tabla, on="seleccion_nacional", how="left")
+
+jugadores.loc[jugadores["valor_mercado"].isna(), "valor_mercado"] = jugadores["valor_media"]
+jugadores.drop(columns=["valor_media"], inplace = True)
+
+print(jugadores["valor_mercado"].isnull().sum())
+
+
+# Imputación por Regresión: calificación_media
