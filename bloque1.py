@@ -75,7 +75,7 @@ referees = referees.drop(columns=["referee_id.1", "check_id"])
 
 
 # PARTIDOS
-partidos = matches[["date", "stage_id", "venue_id", "home_team_id", "away_team_id","home_score", "away_score", "result_type","home_penalty_score", "away_penalty_score", "referee_id"]]
+partidos = matches[["date", "stage_id", "venue_id", "home_team_id", "away_team_id","home_score", "away_score", "result_type","home_penalty_score", "away_penalty_score", "referee_id", "match_id"]]
 partidos = pd.merge(partidos, stages[["stage_id", "stage_name"]], on="stage_id", how="left")
 partidos = pd.merge(partidos, venues[["venue_id", "stadium_name", "city", "country"]], on="venue_id", how="left")
 partidos = pd.merge(partidos, referees[["referee_id", "name"]], on="referee_id", how="left")
@@ -103,10 +103,13 @@ partidos = partidos.rename(columns={
     "team_name_y": "seleccion_visitante"
 })
 
+
+partidos.index = range(1, len(partidos) + 1)
+partidos.index.name = "index_partido"
+
 print(partidos)
 
 # JUGADORES
-
 jugadores = player_stats[["player_id", "matches_played", "minutes_played", "goals", "assists", "shots", "yellow_cards", "red_cards", "saves", "goals_conceded", "average_rating"]]
 jugadores = pd.merge(jugadores, squads[["player_id", "team_id", "player_name", "position", "club_team", "market_value_eur", "caps"]], on="player_id", how="left")
 jugadores = pd.merge(jugadores, teams[["team_id", "team_name"]], on="team_id", how="left")
@@ -135,6 +138,27 @@ jugadores = jugadores.rename(columns={
 jugadores = jugadores.set_index("nombre_jugador")
 
 print(jugadores)
+
+# EVENTOS
+eventos = register[["match_id", "minute", "event_type", "team_id", "player_id"]]
+eventos = pd.merge(eventos, partidos.reset_index()[["index_partido", "match_id"]], on="match_id", how="left") # .reset_index() para poder hacer merge con index_partido
+eventos = pd.merge(eventos, squads[["player_id", "player_name"]], on="player_id", how="left")
+eventos = pd.merge(eventos, teams[["team_id", "team_name"]], on="team_id", how="left")
+
+eventos = eventos.drop(columns=["match_id", "player_id", "team_id"])
+partidos = partidos.drop(columns=["match_id"])
+
+eventos = eventos.rename(columns={
+    "minute": "minuto_evento",
+    "event_type": "tipo_evento",
+    "player_name": "nombre_jugador",
+    "team_name": "seleccion_evento",
+})
+
+eventos.index = range(1, len(eventos) + 1)
+eventos.index.name = "index_evento"
+
+print(eventos)
 
 
 
