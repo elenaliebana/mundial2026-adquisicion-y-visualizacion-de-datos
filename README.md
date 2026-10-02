@@ -1,0 +1,1 @@
+# mundial2026-adquisicion-y-visualizacion-de-datos
