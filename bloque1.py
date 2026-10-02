@@ -105,5 +105,36 @@ partidos = partidos.rename(columns={
 
 print(partidos)
 
+# JUGADORES
+
+jugadores = player_stats[["player_id", "matches_played", "minutes_played", "goals", "assists", "shots", "yellow_cards", "red_cards", "saves", "goals_conceded", "average_rating"]]
+jugadores = pd.merge(jugadores, squads[["player_id", "team_id", "player_name", "position", "club_team", "market_value_eur", "caps"]], on="player_id", how="left")
+jugadores = pd.merge(jugadores, teams[["team_id", "team_name"]], on="team_id", how="left")
+
+jugadores = jugadores.drop(columns=["player_id", "team_id"])
+
+jugadores = jugadores.rename(columns={
+    "player_name": "nombre_jugador",
+    "team_name": "seleccion_nacional",
+    "club_team": "club_jugador",
+    "market_value_eur": "valor_mercado",
+    "caps": "partidos_seleccion",
+    "position": "posicion",
+    "matches_played": "partidos_jugados",
+    "minutes_played": "minutos_jugados",
+    "goals": "goles",
+    "assists": "asistencias",
+    "shots": "tiros",
+    "yellow_cards": "tarjetas_amarillas",
+    "red_cards": "tarjetas_rojas",
+    "saves": "paradas",
+    "goals_conceded": "goles_concedidos",
+    "average_rating": "calificacion_media",
+})
+
+jugadores = jugadores.set_index("nombre_jugador")
+
+print(jugadores)
+
 
 
