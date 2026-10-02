@@ -71,10 +71,39 @@ print(referees["check_id"].value_counts())
 # Como al ver los valores todos son 'True' (la columna está duplicada), eliminamos una de ellas y check_id
 referees = referees.drop(columns=["referee_id.1", "check_id"])
 
-# Crear dataframe de partidos
-partidos = matches["fecha_partido", "home_score", "away_score", "result_type", "home_penalty_score", "away_penalty_score", "referee_id"]
 
 
+
+# PARTIDOS
+partidos = matches[["date", "stage_id", "venue_id", "home_team_id", "away_team_id","home_score", "away_score", "result_type","home_penalty_score", "away_penalty_score", "referee_id"]]
+partidos = pd.merge(partidos, stages[["stage_id", "stage_name"]], on="stage_id", how="left")
+partidos = pd.merge(partidos, venues[["venue_id", "stadium_name", "city", "country"]], on="venue_id", how="left")
+partidos = pd.merge(partidos, referees[["referee_id", "name"]], on="referee_id", how="left")
+
+partidos = pd.merge(partidos, teams[["team_id", "team_name"]], left_on="home_team_id", right_on="team_id", how="left")
+partidos = pd.merge(partidos, teams[["team_id", "team_name"]], left_on="away_team_id", right_on="team_id", how="left")
+
+# Eliminar columnas sobrantes
+partidos = partidos.drop(columns=["stage_id", "venue_id", "home_team_id", "away_team_id", "referee_id", "team_id_x", "team_id_y"])
+
+# Renombrar columnas
+partidos = partidos.rename(columns={
+    "date": "fecha_partido",
+    "stage_name": "ronda",
+    "stadium_name": "estadio",
+    "city": "ciudad_partido",
+    "country": "pais_partido",
+    "result_type": "prorroga",
+    "home_score": "marcador_local",
+    "away_score": "marcador_visitante",
+    "home_penalty_score": "penalty_local",
+    "away_penalty_score": "penalty_visitante",
+    "name": "arbitro_partido",
+    "team_name_x": "seleccion_local",
+    "team_name_y": "seleccion_visitante"
+})
+
+print(partidos)
 
 
 
