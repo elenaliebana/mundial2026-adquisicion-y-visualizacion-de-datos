@@ -1,23 +1,20 @@
 import pandas as pd
 import numpy as np
 import re
+from sklearn.linear_model import LinearRegression
 
-# Partidos
+### CARGA DE DATOS
 matches = pd.read_csv("datasetsWC26/matches_mundial2026.csv", sep=";")
 stages = pd.read_csv("datasetsWC26/tournament_stages.csv", sep=",")
 venues = pd.read_csv("datasetsWC26/worldcup_venues.csv", sep=";")
 referees = pd.read_csv("datasetsWC26/index_referees.csv", sep=";")
-
-# Jugadores
 squads = pd.read_csv("datasetsWC26/2026squads_and_players.csv", sep=";")
 player_stats = pd.read_csv("datasetsWC26/2026player_stats.csv", sep=";")
-
-# Eventos
 register = pd.read_csv("datasetsWC26/2026match_register.csv", sep=";")
-
-# Todos
 teams = pd.read_csv("datasetsWC26/2026nationalteams.csv", sep=",")
 teams = teams.dropna(subset=["team_id"]) # En teams hay varias filas con team_id nulo
+
+### EXPLORACIÓN INCIAL
 
 # Creo un diccionario con el nombre y todos los datasets para utilizar en un bucle
 datasets = {
@@ -31,6 +28,7 @@ datasets = {
     "teams": teams,
 }
 
+# Resumen
 for name, df in datasets.items():
     print("=" * 90)
     print(f"DATASET: {name}")
@@ -60,14 +58,12 @@ for name, df in datasets.items():
 
 # En "filas duplicadas" podemos observar que hay varios dataframes con duplicados exactos
 # Los eliminamos para que al crear partidos, eventos y jugadores no haya duplicados
-
 for name, df in datasets.items():
     df.drop_duplicates(inplace = True)
     print(f"Filas duplicadas en {name}:", df.duplicated().sum())
     
 # Al imprimir las columnas de referees, vemos que hay dos que se llaman referee_id
-# Para ver si es la misma creamos otra columna en la que aparezca 'True' si son inguales y 'False' si no
-
+# Para ver si es la misma creamos otra columna en la que aparezca 'True' si son iguales y 'False' si no
 referees["check_id"] = referees["referee_id.1"] == referees["referee_id"]
 print(referees["check_id"].value_counts())
 
@@ -75,9 +71,10 @@ print(referees["check_id"].value_counts())
 referees = referees.drop(columns=["referee_id.1", "check_id"])
 
 
+### CREACIÓN DE LOS TRES DATAFRAMES
 
-
-# PARTIDOS
+## PARTIDOS
+# Selección de columnas
 partidos = matches[["date", "stage_id", "venue_id", "home_team_id", "away_team_id","home_score", "away_score", "result_type","home_penalty_score", "away_penalty_score", "referee_id", "match_id"]]
 partidos = pd.merge(partidos, stages[["stage_id", "stage_name"]], on="stage_id", how="left")
 partidos = pd.merge(partidos, venues[["venue_id", "stadium_name", "city", "country"]], on="venue_id", how="left")
@@ -106,17 +103,14 @@ partidos = partidos.rename(columns={
     "team_name_y": "seleccion_visitante"
 })
 
-# Actualizamos columnas de prorroga y penaltis
-partidos["prorroga"] = partidos["prorroga"].map({"Regular": "NO", "AET": "SI", "Penalties": "SI"})
-partidos["penalty_local"] = partidos["penalty_local"].fillna(0)
-partidos["penalty_visitante"] = partidos["penalty_visitante"].fillna(0)
-
+# Establecemos el índice
 partidos.index = range(1, len(partidos) + 1)
 partidos.index.name = "index_partido"
 
 print(partidos)
 
-# JUGADORES
+## JUGADORES
+# Selección de columnas
 jugadores = player_stats[["player_id", "matches_played", "minutes_played", "goals", "assists", "shots", "yellow_cards", "red_cards", "saves", "goals_conceded", "average_rating"]]
 jugadores = pd.merge(jugadores, squads[["player_id", "team_id", "player_name", "position", "club_team", "market_value_eur", "caps"]], on="player_id", how="left")
 jugadores = pd.merge(jugadores, teams[["team_id", "team_name"]], on="team_id", how="left")
@@ -146,7 +140,8 @@ jugadores = jugadores.set_index("nombre_jugador")
 
 print(jugadores)
 
-# EVENTOS
+## EVENTOS
+# Selección de columnas
 eventos = register[["match_id", "minute", "event_type", "team_id", "player_id"]]
 eventos = pd.merge(eventos, partidos.reset_index()[["index_partido", "match_id"]], on="match_id", how="left") # .reset_index() para poder hacer merge con index_partido
 eventos = pd.merge(eventos, squads[["player_id", "player_name"]], on="player_id", how="left")
@@ -167,7 +162,7 @@ eventos.index.name = "index_evento"
 
 print(eventos)
 
-
+### EXPLORACIÓN DE LOS NUEVOS DATAFRAMES
 datasets_new = {"partidos": partidos, "jugadores": jugadores, "eventos": eventos}
 
 for nombre, df in datasets_new.items():
@@ -187,39 +182,80 @@ for nombre, df in datasets_new.items():
     print(resumen)
 
 
-# TRATAMIENTO
+### TRATAMIENTO
 
-# Partidos
+## PARTIDOS
+# Vemos todos los valores de cada columna
+for columna in partidos.columns:
+    print(columna, partidos[columna].unique())
+
+# Como en la columna pais_partido hay dos versiones de escribir Estados Unidos, las unificamos
+partidos["pais_partido"] = partidos["pais_partido"].replace({"usa":"USA"})
+print(partidos["pais_partido"].unique())
+
+# Actualizamos la columna de prorroga con valores SI / NO
+partidos["prorroga"] = partidos["prorroga"].map({"Regular": "NO", "AET": "SI", "Penalties": "SI"})
+
+# Actualizamos penaltis: 
+# Hay valores de 20, 30, 40 por lo que parece que están todos multiplicados por 10
+# Rellenamos los valores nulos con 0
+partidos["penalty_local"] = partidos["penalty_local"] / 10
+partidos["penalty_visitante"] = partidos["penalty_visitante"] / 10
+partidos["penalty_local"] = partidos["penalty_local"].fillna(0)
+partidos["penalty_visitante"] = partidos["penalty_visitante"].fillna(0)
+
 # 1 árbitro nulo
 partidos["arbitro_partido"] = partidos["arbitro_partido"].fillna("Desconocido")
 
-# Jugadores
+# La ronda "quarter_finals" tiene un espacio innecesario después del nombre
+partidos["ronda"] = partidos["ronda"].str.strip()
+
+
+## JUGADORES
+# Vemos todos los valores de cada columna
+for columna in jugadores.columns:
+    print(columna, jugadores[columna].unique())
+
 # Hay muchos nulos en columnas numéricas (goles, asistencias,...)
 # Tiene sentido que los nulos sean en realidad 0, por lo que sustituimos los valores
-columnas_nulos =["paradas", "goles_concedidos", "goles", "asistencias", "tarjetas_amarillas", "tarjetas_rojas"]
+columnas_nulos =["paradas", "tiros", "goles_concedidos", "goles", "asistencias", "tarjetas_amarillas", "tarjetas_rojas"]
 for columna in columnas_nulos:
-    jugadores[columna] = jugadores[columna].fillna(0)
+    jugadores[columna] = jugadores[columna].fillna(0).astype(int)
 
-# Eventos
+# Hay varios jugadores con calificación media o valor de mercado 0, lo que parece un valor 
+# de relleno ya que en el resto de casos la calificación / valor es mucho más alta, por lo 
+# que convertimos a nulo para imputarlo más tarde
+jugadores.loc[jugadores["calificacion_media"] == 0, "calificacion_media"] = np.nan
+jugadores.loc[jugadores["valor_mercado"] == 0, "valor_mercado"] = np.nan
 
-# Minutos anómalos --> Hay minutos negativos o por encima de la duración del partido que ponemos como nulos para imputarlos más adelante
+print(jugadores)
+
+## EVENTOS
+# Vemos todos los valores de cada columna
+for columna in eventos.columns:
+    print(columna, eventos[columna].unique()) 
+
+# Minutos anómalos --> Hay minutos negativos o por encima de la duración del partido 
+# que ponemos como nulos para imputarlos más adelante
 eventos.loc[(eventos["minuto_evento"] < 0) | (eventos["minuto_evento"] > 130), "minuto_evento"] = np.nan
 
-eventos["tipo_evento"].unique() # Vemos que VAR review y review VAR son lo mismo
+# VAR review y review VAR son lo mismo
 eventos["tipo_evento"] = eventos["tipo_evento"].replace({"Review VAR": "VAR Review"})
 eventos["tipo_evento"].unique()
 
-# Fechas
+print(eventos)
+
+# FECHAS - EXPRESIONES REGULARES
 import re
 
+# Creo una lista y un diccionario que usaré luego para convertir todos los diferentes
+# formatos de meses a letra
 MESES_LISTA = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
                "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
-MESES_ES = {
+MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
-    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
-}
-MESES_EN = {
+    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8,
     "sep": 9, "oct": 10, "nov": 11, "dec": 12,
     "january": 1, "february": 2, "march": 3, "april": 4, "june": 6, "july": 7,
@@ -233,78 +269,73 @@ def actualizar_fecha(texto):
     pattern = re.match(r"(\d{4})-(\d{2})-(\d{2})T", fecha)
     if pattern:
         anio, mes, dia = pattern.groups()
-        return int(dia), int(mes), int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[int(mes) - 1]}/{anio[2:]}"
 
     # 20260619 
     pattern = re.match(r"(\d{4})(\d{2})(\d{2})$", fecha)
     if pattern:
         anio, mes, dia = pattern.groups()
-        return int(dia), int(mes), int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[int(mes) - 1]}/{anio[2:]}"
 
     # 25-jun-26
     pattern = re.match(r"(\d{1,2})-([a-zA-Z]{3})-(\d{2})$", fecha)
     if pattern:
         dia, mes_txt, anio = pattern.groups()
-        return int(dia), MESES_EN[mes_txt.lower()], 2000 + int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[int(MESES[mes_txt.lower()]) - 1]}/{anio}"
 
     # 06-21-2026  
     pattern = re.match(r"(\d{2})-(\d{2})-(\d{4})$", fecha)
     if pattern:
         mes, dia, anio = pattern.groups()
-        return int(dia), int(mes), int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[int(mes) - 1]}/{anio[2:]}"
 
     # 26.06.2026 
     pattern = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})$", fecha)
     if pattern:
         dia, mes, anio = pattern.groups()
-        return int(dia), int(mes), int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[int(mes) - 1]}/{anio[2:]}"
 
     # 27/06/2026 
     pattern = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})$", fecha)
     if pattern:
         a, b, anio = pattern.groups()
-        a, b, anio = int(a), int(b), int(anio)
+        a, b = int(a), int(b)
         # El Mundial solo se juega en junio (6) y julio (7)
 
         if b in (6, 7):
             dia, mes = a, b
         else:
             dia, mes = b, a
-        return dia, mes, anio
+        return f"{int(dia):02d}/{MESES_LISTA[mes - 1]}/{anio[2:]}"
 
     # Jun 20 2026  
     pattern = re.match(r"([a-zA-Z]{3})\s+(\d{1,2})\s+(\d{4})$", fecha)
     if pattern:
         mes_txt, dia, anio = pattern.groups()
-        return int(dia), MESES_EN[mes_txt.lower()], int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[MESES[mes_txt.lower()] - 1]}/{anio[2:]}"
 
     # June 22, 2026  
     pattern = re.match(r"([a-zA-Z]+)\s+(\d{1,2}),\s*(\d{4})$", fecha)
     if pattern:
         mes_txt, dia, anio = pattern.groups()
-        return int(dia), MESES_EN[mes_txt.lower()], int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[MESES[mes_txt.lower()] - 1]}/{anio[2:]}"
 
     # 21 June 2026  
     pattern = re.match(r"(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})$", fecha)
     if pattern:
         dia, mes_txt, anio = pattern.groups()
-        return int(dia), MESES_EN[mes_txt.lower()], int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[MESES[mes_txt.lower()] - 1]}/{anio[2:]}"
 
     # 20 de junio de 2026
     pattern = re.match(r"(\d{1,2}) de ([a-zA-Zñ]+) de (\d{4})$", fecha)
     if pattern:
         dia, mes_txt, anio = pattern.groups()
-        return int(dia), MESES_ES[mes_txt.lower()], int(anio)
+        return f"{int(dia):02d}/{MESES_LISTA[MESES[mes_txt.lower()] - 1]}/{anio[2:]}"
 
-def formato_fecha(resultado):
-    dia, mes, anio = resultado
-    return f"{dia:02d}/{MESES_LISTA[mes - 1]}/{anio % 100:02d}"
+partidos["fecha_partido"] = partidos["fecha_partido"].apply(actualizar_fecha)
 
 # IMPUTACIÓN
 # Imputación por la Media: valor mercado
-
-partidos["fecha_partido"] = partidos["fecha_partido"].apply(actualizar_fecha).apply(formato_fecha)
-
 medias = jugadores.groupby("seleccion_nacional")["valor_mercado"].mean()
 
 medias_tabla = medias.reset_index() 
@@ -320,3 +351,49 @@ print(jugadores["valor_mercado"].isnull().sum())
 
 
 # Imputación por Regresión: calificación_media
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+
+porteros = jugadores[jugadores["posicion"] == "GK"]
+resto = jugadores[jugadores["posicion"] != "GK"]
+
+
+
+# Eliminamos las filas que no tienen calificación media. La regresión necesita ejemplos completos para aprender
+train_gk = porteros.dropna(subset=["calificacion_media"])
+train_resto = resto.dropna(subset=["calificacion_media"])
+
+# Entrenamos el modelo. El modelo aprende la relación entre paradas/goles_concedidos/tarjetas y la calificacion_media de un portero.
+# .fit(X, y) x- variable explicativa; y - variable objetivo 
+
+model_gk = LinearRegression().fit(
+    train_gk[["paradas", "goles_concedidos", "tarjetas_amarillas", "tarjetas_rojas"]],
+    train_gk["calificacion_media"]
+)
+
+model_resto = LinearRegression().fit(
+    train_resto[["goles", "asistencias", "tarjetas_amarillas", "tarjetas_rojas"]],
+    train_resto["calificacion_media"]
+)
+
+# Creamos una copia para imputar
+jugadores_imputed = jugadores.copy()
+
+# Máscara de valores faltantes
+mask_gk = (jugadores_imputed["posicion"] == "GK") & (jugadores_imputed["calificacion_media"].isna())
+mask_resto = (jugadores_imputed["posicion"] != "GK") & (jugadores_imputed["calificacion_media"].isna())
+
+# Filtramos los valores faltantes y predecimos sus valores a partir del modelo
+jugadores_imputed.loc[mask_gk, "calificacion_media"] = model_gk.predict(
+    jugadores_imputed.loc[mask_gk, ["paradas", "goles_concedidos", "tarjetas_amarillas", "tarjetas_rojas"]]
+)
+
+jugadores_imputed.loc[mask_resto, "calificacion_media"] = model_resto.predict(
+    jugadores_imputed.loc[mask_resto, ["goles", "asistencias", "tarjetas_amarillas", "tarjetas_rojas"]]
+)
+
+# Marcamos que datos fueron imputados
+jugadores_imputed["imputed"] = mask_gk | mask_resto
+jugadores = jugadores_imputed
+
+print(jugadores)
