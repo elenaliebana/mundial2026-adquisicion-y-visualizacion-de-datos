@@ -111,14 +111,13 @@ print(partidos)
 
 ## JUGADORES
 # Selección de columnas
-jugadores = player_stats[["player_id", "matches_played", "minutes_played", "goals", "assists", "shots", "yellow_cards", "red_cards", "saves", "goals_conceded", "average_rating"]]
+jugadores = player_stats[["player_id", "player_name", "matches_played", "minutes_played", "goals", "assists", "shots", "yellow_cards", "red_cards", "saves", "goals_conceded", "average_rating"]]
 jugadores = pd.merge(jugadores, squads[["player_id", "team_id", "player_name", "position", "club_team", "market_value_eur", "caps"]], on="player_id", how="left")
 jugadores = pd.merge(jugadores, teams[["team_id", "team_name"]], on="team_id", how="left")
 
-jugadores = jugadores.drop(columns=["player_id", "team_id"])
+jugadores = jugadores.drop(columns=["team_id"])
 
 jugadores = jugadores.rename(columns={
-    "player_name": "nombre_jugador",
     "team_name": "seleccion_nacional",
     "club_team": "club_jugador",
     "market_value_eur": "valor_mercado",
@@ -136,19 +135,32 @@ jugadores = jugadores.rename(columns={
     "average_rating": "calificacion_media",
 })
 
-jugadores = jugadores.set_index("nombre_jugador")
+# Hay varios jugadores que se llaman "Mc" en player_name_y pero en player_name_x muchas de las 
+# tildes vienen en un mal formato, asi que unificamos las dos columnas cogiendo los valores buenos
+jugadores.loc[jugadores["player_name_y"]=="Mc", "player_name_y"] = jugadores["player_name_x"]
+
+jugadores = jugadores.drop(columns="player_name_x")
+jugadores = jugadores.rename(columns={"player_name_y": "nombre_jugador"})
+
 
 print(jugadores)
 
 ## EVENTOS
+# Primero eliminamos las filas del dataset register que tienen el id repetido
+con_datos = register[register["player_id"].notna()].drop_duplicates(subset="event_id", keep="first")
+sin_datos = register[register["player_id"].isna()] # Las filas vacías no cuentan como id repetido
+register = pd.concat([con_datos, sin_datos]).sort_index()
+
 # Selección de columnas
 eventos = register[["match_id", "minute", "event_type", "team_id", "player_id"]]
 eventos = pd.merge(eventos, partidos.reset_index()[["index_partido", "match_id"]], on="match_id", how="left") # .reset_index() para poder hacer merge con index_partido
-eventos = pd.merge(eventos, squads[["player_id", "player_name"]], on="player_id", how="left")
+eventos = pd.merge(eventos, jugadores[["player_id", "nombre_jugador"]], on="player_id", how="left")
 eventos = pd.merge(eventos, teams[["team_id", "team_name"]], on="team_id", how="left")
 
 eventos = eventos.drop(columns=["match_id", "player_id", "team_id"])
 partidos = partidos.drop(columns=["match_id"])
+jugadores = jugadores.drop(columns=["player_id"])
+jugadores = jugadores.set_index("nombre_jugador")
 
 eventos = eventos.rename(columns={
     "minute": "minuto_evento",
@@ -204,6 +216,9 @@ partidos["penalty_visitante"] = partidos["penalty_visitante"] / 10
 partidos["penalty_local"] = partidos["penalty_local"].fillna(0)
 partidos["penalty_visitante"] = partidos["penalty_visitante"].fillna(0)
 
+partidos["penalty_local"] = partidos["penalty_local"].astype(int)
+partidos["penalty_visitante"] = partidos["penalty_visitante"].astype(int)
+
 # 1 árbitro nulo
 partidos["arbitro_partido"] = partidos["arbitro_partido"].fillna("Desconocido")
 
@@ -246,7 +261,6 @@ eventos["tipo_evento"].unique()
 print(eventos)
 
 # FECHAS - EXPRESIONES REGULARES
-import re
 
 # Creo una lista y un diccionario que usaré luego para convertir todos los diferentes
 # formatos de meses a letra
@@ -334,30 +348,28 @@ def actualizar_fecha(texto):
 
 partidos["fecha_partido"] = partidos["fecha_partido"].apply(actualizar_fecha)
 
-# IMPUTACIÓN
-# Imputación por la Media: valor mercado
+### IMPUTACIÓN
+## Imputación por la Media: valor mercado
 medias = jugadores.groupby("seleccion_nacional")["valor_mercado"].mean()
 
 medias_tabla = medias.reset_index() 
 
 medias_tabla.rename(columns={"valor_mercado": "valor_media"}, inplace = True)
 
+# Al hacer el merge, se elimina el índice de nombre_jugador,
+# así que lo reseteamos y luego lo volvemos a poner
+jugadores = jugadores.reset_index() 
 jugadores = pd.merge(jugadores, medias_tabla, on="seleccion_nacional", how="left")
 
 jugadores.loc[jugadores["valor_mercado"].isna(), "valor_mercado"] = jugadores["valor_media"]
 jugadores.drop(columns=["valor_media"], inplace = True)
 
 print(jugadores["valor_mercado"].isnull().sum())
+jugadores = jugadores.set_index("nombre_jugador")
 
-
-# Imputación por Regresión: calificación_media
-from sklearn.linear_model import LinearRegression
-import matplotlib.pyplot as plt
-
+## Imputación por Regresión: calificación_media
 porteros = jugadores[jugadores["posicion"] == "GK"]
 resto = jugadores[jugadores["posicion"] != "GK"]
-
-
 
 # Eliminamos las filas que no tienen calificación media. La regresión necesita ejemplos completos para aprender
 train_gk = porteros.dropna(subset=["calificacion_media"])
@@ -395,5 +407,36 @@ jugadores_imputed.loc[mask_resto, "calificacion_media"] = model_resto.predict(
 # Marcamos que datos fueron imputados
 jugadores_imputed["imputed"] = mask_gk | mask_resto
 jugadores = jugadores_imputed
+jugadores = jugadores.drop(columns=["imputed"])
 
 print(jugadores)
+
+## Imputación por Interpolación: minutos_evento
+eventos_imputed = eventos.copy()
+
+eventos_imputed["minuto_evento"] = (
+    eventos_imputed.groupby("index_partido")["minuto_evento"] # Agrupar por partido para interpolar con eventos del mismo partido
+    .transform(lambda x: x.interpolate("linear").bfill()) # Hay que utilizar transform porque interpolate no es un atributo de 'SeriesGroupBy'
+)
+
+eventos_imputed["minuto_evento"] = eventos_imputed["minuto_evento"].round()
+eventos = eventos_imputed
+
+# Convertimos a entero los valores numéricos necesarios
+eventos["minuto_evento"] = eventos["minuto_evento"].astype("Int64")
+eventos["index_partido"] = eventos["index_partido"].astype("Int64")
+
+
+### ORDENAR COLUMNAS: Siguiendo el orden del enunciado
+partidos = partidos[["fecha_partido", "ronda", "estadio", "ciudad_partido", "pais_partido",
+                     "seleccion_local", "seleccion_visitante", "marcador_local",
+                     "marcador_visitante", "prorroga", "penalty_local", "penalty_visitante",
+                     "arbitro_partido"]]
+
+jugadores = jugadores[["seleccion_nacional", "club_jugador", "partidos_seleccion", "posicion",
+                       "valor_mercado", "partidos_jugados", "minutos_jugados", "goles",
+                       "asistencias", "tiros", "tarjetas_amarillas", "tarjetas_rojas",
+                       "paradas", "goles_concedidos", "calificacion_media"]]
+
+eventos = eventos[["minuto_evento", "index_partido", "nombre_jugador",
+                   "tipo_evento", "seleccion_evento"]]
