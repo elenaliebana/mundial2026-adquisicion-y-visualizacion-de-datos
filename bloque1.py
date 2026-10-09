@@ -147,9 +147,7 @@ print(jugadores)
 
 ## EVENTOS
 # Primero eliminamos las filas del dataset register que tienen el id repetido
-con_datos = register[register["player_id"].notna()].drop_duplicates(subset="event_id", keep="first")
-sin_datos = register[register["player_id"].isna()] # Las filas vacías no cuentan como id repetido
-register = pd.concat([con_datos, sin_datos]).sort_index()
+register = register[register["player_id"].notna()].drop_duplicates(subset="event_id", keep="first")
 
 # Selección de columnas
 eventos = register[["match_id", "minute", "event_type", "team_id", "player_id"]]
