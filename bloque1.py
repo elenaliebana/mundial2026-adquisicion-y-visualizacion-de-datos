@@ -440,3 +440,9 @@ jugadores = jugadores[["seleccion_nacional", "club_jugador", "partidos_seleccion
 
 eventos = eventos[["minuto_evento", "index_partido", "nombre_jugador",
                    "tipo_evento", "seleccion_evento"]]
+
+
+### EXPORTACIÓN DE DATOS
+partidos.to_excel("partidosWC26.xlsx")
+eventos.to_excel("eventosWC26.xlsx")
+jugadores.to_excel("jugadoresWC2026.xlsx")
