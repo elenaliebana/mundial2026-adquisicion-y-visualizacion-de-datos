@@ -443,4 +443,4 @@ eventos = eventos[["minuto_evento", "index_partido", "nombre_jugador",
 ### EXPORTACIÓN DE DATOS
 partidos.to_excel("partidosWC26.xlsx")
 eventos.to_excel("eventosWC26.xlsx")
-jugadores.to_excel("jugadoresWC2026.xlsx")
+jugadores.to_excel("jugadoresWC26.xlsx")
