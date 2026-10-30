@@ -219,3 +219,85 @@ fig6 = px.scatter(
 )
 
 st.plotly_chart(fig6, use_container_width=True)
+
+### ANÁLISIS III: IMPACTO ARBITRAL
+st.header("Análisis III: Impacto arbitral")
+
+## 7) Diagrama de cajas: tarjetas por partido y ronda
+st.subheader("7. Tarjetas por partido según la ronda")
+tarjetas = eventos[eventos["tipo_evento"].isin(["Yellow Card", "Red Card"])]["index_partido"].value_counts().sort_index()
+
+p7 = partidos.copy()
+p7["tarjetas"] = tarjetas
+p7["tarjetas"] = p7["tarjetas"].fillna(0)
+
+fig7 = px.box(
+    p7,
+    x = "ronda",
+    y = "tarjetas",
+    points = "all", # Un punto por partido                                       
+    hover_data = ["seleccion_local", "seleccion_visitante"],  
+    height = 500,
+    title = "Tarjetas por partido en cada ronda",
+    labels = {"ronda": "Ronda", "tarjetas": "Tarjetas en el partido"})
+
+st.plotly_chart(fig7, use_container_width=True)
+
+## 8) Índice de Intervención Arbitral
+st.subheader("8. Índice de Intervención Arbitral por árbitro")
+
+eventos["peso"] = eventos["tipo_evento"].map({"Yellow Card": 1, "Red Card": 3, "VAR Review": 1, "Goal": 0.2}).fillna(0)
+
+p = partidos.copy()
+p["indice_arbitral"] = eventos.groupby("index_partido")["peso"].sum()
+p["indice_arbitral"] = p["indice_arbitral"].fillna(0)
+
+st.sidebar.header("Filtros del gráfico 8")
+rondas8 = st.sidebar.multiselect("Ronda", partidos["ronda"].unique(), key="rondas8")
+selecciones8 = st.sidebar.multiselect("Selecciones", sorted(jugadores["seleccion_nacional"].unique()), key="selecciones8")
+
+p8 = p[(p["arbitro_partido"] != "No disponible") & p["ronda"].isin(rondas8) & (p["seleccion_local"].isin(selecciones8) | p["seleccion_visitante"].isin(selecciones8))]
+
+
+puntos = p8[["arbitro_partido", "indice_arbitral"]].copy() # Índice de cada partido
+puntos["tipo"] = "Partido"
+puntos["tamaño"] = 1 # Tamaño de cada punto
+
+medias = p8.groupby("arbitro_partido")["indice_arbitral"].mean().reset_index() # Media de cada árbitro
+medias["tipo"] = "Media"
+medias["tamaño"] = 2 # La media se dibuja más grande 
+
+fig8 = px.scatter(
+    pd.concat([puntos, medias]),
+    x = "indice_arbitral",
+    y = "arbitro_partido",
+    color = "tipo", # El color y el símbolo dependen de si es el índice por partido o la media
+    symbol = "tipo",
+    size = "tamaño",
+    size_max = 12,
+    hover_data = {"tamaño": False}, # No mostrar el tamaño al pasar el ratón
+    color_discrete_map = {"Partido": "royalblue", "Media": "red"},
+    category_orders = {"tipo": ["Media", "Partido"]}, # La media se dibuja primero y los partidos encima
+    height = max(400, 40 * len(medias)), # Más árbitros, más alto
+    title = "Índice de intervención arbitral por árbitro",
+    labels = {"indice_arbitral": "Índice de intervención arbitral", "arbitro_partido": "Árbitro", "tipo": ""}
+)
+
+st.plotly_chart(fig8, use_container_width=True)
+
+local = p[["seleccion_local", "arbitro_partido", "indice_arbitral"]].rename(columns={"seleccion_local": "seleccion"})
+visitante = p[["seleccion_visitante", "arbitro_partido", "indice_arbitral"]].rename(columns={"seleccion_visitante": "seleccion"})
+por_seleccion = pd.concat([local, visitante])
+por_seleccion = por_seleccion[por_seleccion["arbitro_partido"] != "No disponible"] 
+
+media_sel = por_seleccion.groupby(["seleccion", "arbitro_partido"])["indice_arbitral"].mean().reset_index()
+
+menos = media_sel.sort_values("indice_arbitral").groupby("seleccion").head(1) # Árbitro con el índice medio más bajo
+mas = media_sel.sort_values("indice_arbitral", ascending=False).groupby("seleccion").head(1) # Árbitro con el índice medio más alto
+
+resumen8 = pd.merge(menos, mas, on="seleccion", suffixes=("_menos", "_mas")) # Resumen para ver el árbitro más y menos severo por seleccion
+st.dataframe(resumen8)
+
+# Coincidencias: veces que cada árbitro se repite como menos y como más severo
+st.dataframe(resumen8["arbitro_partido_menos"].value_counts())
+st.dataframe(resumen8["arbitro_partido_mas"].value_counts())
