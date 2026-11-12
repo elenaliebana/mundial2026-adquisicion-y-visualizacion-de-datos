@@ -25,10 +25,10 @@ st.subheader("1. Eventos de un partido")
 st.sidebar.header("Filtros del gráfico 1")
 p1 = partidos.copy()
 p1["nombre_partido"] = p1["seleccion_local"] + " - " + p1["seleccion_visitante"] + " (" + p1["ronda"] + ")" # Nombre con el que aparece el partido en el selector
-nombre_partido = st.sidebar.selectbox("Partido", p1["nombre_partido"])
+nombre_partido = st.sidebar.selectbox("Partido", p1["nombre_partido"], index=len(p1) - 1) # Index para que salga la final al abrir la app
 id_partido = p1[p1["nombre_partido"] == nombre_partido].index[0] # el número del partido elegido
 ev1 = eventos[eventos["index_partido"] == id_partido]
-
+ev1["n_eventos"] = 1   # altura de cada barra
 
 # Colores para cada tipo de evento
 COLORES_EVENTO = {
@@ -44,15 +44,16 @@ COLORES_EVENTO = {
 fig1 = px.bar(
     ev1,
     x = "minuto_evento",                  
-    y = [1] * len(ev1),   # [1] es la altura de cada barra              
+    y = "n_eventos",   # [1] es la altura de cada barra              
     color = "tipo_evento", 
     color_discrete_map = COLORES_EVENTO, # colores definidos    
     category_orders = {"tipo_evento": ["Assist", "Goal"]}, # Para que el gol sobresalga más que la asistencia       
-    hover_name = "nombre_jugador", 
+    hover_name = "nombre_jugador",
+    hover_data={"n_eventos": False, "seleccion_evento":True}, 
     range_x = [0, 125],  # el eje cubre todo el partido y la prórroga
     height = 400,    
-    title = "Eventos del partido",
-    labels = {"minuto_evento": "Minuto del partido", "tipo_evento": "Tipo de evento", "y": "Nº de eventos"}
+    title = "Eventos del partido " + nombre_partido,
+    labels = {"minuto_evento": "Minuto del partido", "tipo_evento": "Tipo de evento", "seleccion_evento": "Selección"}
 )
 
 fig1.update_traces(width = 1) # barras más gruesas
@@ -62,21 +63,25 @@ fig1.update_yaxes(dtick = 1) # solo números enteros en el eje vertical
 st.plotly_chart(fig1, use_container_width=True)
 
 # Añadimos algunas métricas que pueden ser interesantes
-c1, c2, c3 = st.columns(3)  
-c1.metric("Goles", int((ev1["tipo_evento"] == "Goal").sum()))
-c2.metric("Amarillas", int((ev1["tipo_evento"] == "Yellow Card").sum()))
-c3.metric("Rojas", int((ev1["tipo_evento"] == "Red Card").sum()))
+local = partidos.loc[id_partido, "seleccion_local"]
+visitante = partidos.loc[id_partido, "seleccion_visitante"]
+ev_local = ev1[ev1["seleccion_evento"] == local] # eventos de la selección local
+ev_visitante = ev1[ev1["seleccion_evento"] == visitante] # eventos de la visitante
 
+c1, c2, c3 = st.columns(3)
+c1.metric(f"Goles ({local} - {visitante})", f"{(ev_local['tipo_evento'] == 'Goal').sum()} - {(ev_visitante['tipo_evento'] == 'Goal').sum()}")
+c2.metric(f"Amarillas ({local} - {visitante})", f"{(ev_local['tipo_evento'] == 'Yellow Card').sum()} - {(ev_visitante['tipo_evento'] == 'Yellow Card').sum()}")
+c3.metric(f"Rojas ({local} - {visitante})", f"{(ev_local['tipo_evento'] == 'Red Card').sum()} - {(ev_visitante['tipo_evento'] == 'Red Card').sum()}")
 
 ## 2) Mapa de calor
 
 # A cada evento le copiamos la ronda de su partido (para filtrar por ronda)
 p2 = partidos.reset_index()[["index_partido", "ronda"]]
 eventos = pd.merge(eventos, p2, on="index_partido", how="left")
-
+st.subheader("2. Mapa de calor de eventos")
 st.sidebar.header("Filtros del gráfico 2")
 tipo = st.sidebar.selectbox("Tipo de evento", eventos["tipo_evento"].unique())
-rondas = st.sidebar.multiselect("Ronda", partidos["ronda"].unique())
+rondas = st.sidebar.multiselect("Ronda", partidos["ronda"].unique(), default=list(partidos["ronda"].unique())) # default: todas las rondas seleccionadas
 ev2 = eventos[(eventos["tipo_evento"] == tipo) & (eventos["ronda"].isin(rondas))]
 
 fig2 = px.density_heatmap(
@@ -86,17 +91,23 @@ fig2 = px.density_heatmap(
     nbinsx=25,                                             
     color_continuous_scale = "YlOrRd", # amarillo = pocos eventos, rojo = muchos
     range_x = [0, 125],
+    hover_data={"tipo_evento" :False},
     height = 300,
-    title = "Densidad de eventos durante el partido",
-    labels = {"minuto_evento": "Minuto del partido", "tipo_evento": "Tipo de evento"}
+    title = "Densidad de " + tipo + " durante el partido",
+    labels = {"minuto_evento": "Minuto del partido"}
     )
 
 st.plotly_chart(fig2, use_container_width=True)
 
+c1, c2, c3 = st.columns(3)
+c1.metric("Nº " + tipo, len(ev2))
+c2.metric("Primera parte", f"{(ev2['minuto_evento'] <= 45).mean():.0%}")
+c3.metric("Segunda parte", f"{(ev2['minuto_evento'] > 45).mean():.0%}")
+
 # 3) Gráfico circular de una selección
 st.subheader("3. Eventos a favor y en contra de una selección")
 st.sidebar.header("Filtros del gráfico 3")
-seleccion = st.sidebar.selectbox("Selección", SELECCIONES)
+seleccion = st.sidebar.selectbox("Selección", SELECCIONES, index=SELECCIONES.index("Spain")) # indice: españa
 p3 = partidos[(partidos["seleccion_local"] == seleccion) | (partidos["seleccion_visitante"] == seleccion)]
 ev3 = eventos[eventos["index_partido"].isin(p3.index)].copy()
 
@@ -134,7 +145,8 @@ fig3 = px.pie(
     color_discrete_map = COLORES_PIE,
     hole = 0.4, # gráfico de anillo  
     height = 450,                                                                   
-    title="Eventos de " + seleccion)
+    title="Eventos de " + seleccion,
+    labels = {"evento_final": "Evento", "número": "Número"})
 
 st.plotly_chart(fig3, use_container_width=True)
 
@@ -145,12 +157,14 @@ st.header("Análisis II: Rendimiento de jugadores clave")
 st.subheader("4. Valor de mercado vs calificación media")
 st.sidebar.header("Filtros del gráfico 4")
 
+jugadores["posicion"]=jugadores["posicion"].map({"GK": "Portero", "FWD": "Delantero", "DEF": "Defensa", "MID": "Centrocampista"})
+
 todas4 = st.sidebar.checkbox("Todas las selecciones", key="todas4") # Opción de marcar todas las selecciones a la vez
-selecciones4 = st.sidebar.multiselect("Selecciones", SELECCIONES, disabled=todas4, key="selecciones4") # disabled --> desactiva el multiselect si la casilla está marcada.
+selecciones4 = st.sidebar.multiselect("Selecciones", SELECCIONES, default=["Spain"], disabled=todas4, key="selecciones4") # disabled --> desactiva el multiselect si la casilla está marcada.
 if todas4:
     selecciones4 = SELECCIONES
 
-posiciones = st.sidebar.multiselect("Posiciones", jugadores["posicion"].unique())
+posiciones = st.sidebar.multiselect("Posiciones", jugadores["posicion"].unique(), default=list(jugadores["posicion"].unique()))
 
 # Utilizamos un rango de partidos jugados
 pj_min, pj_max = st.sidebar.slider(
@@ -184,10 +198,12 @@ fig4 = px.scatter(
     opacity = 0.85,                                         
     height = 500,
     title = "Valor de mercado y calificación media",
-    labels = {"valor_mercado": "Valor de mercado", "calificacion_media": "Calificación media", "posicion": "Posición"}
+    labels = {"valor_mercado": "Valor de mercado", "calificacion_media": "Calificación media", "posicion": "Posición", "minutos_jugados": "Minutos Jugados", "seleccion_nacional": "Selección"}
+
 
 )
 
+fig4.update_traces(marker_size = 20)
 st.plotly_chart(fig4, use_container_width=True)
 
 correlacion = j4["valor_mercado"].corr(j4["calificacion_media"])   
@@ -227,7 +243,7 @@ fig5 = px.bar(
     color_discrete_sequence = ["#93101D"],
     height = 550,                   
     title="Top 15 (+ puesto en valor de mercado)",
-    labels={metrica: "Valor de la métrica", "nombre_jugador": "Jugador"}
+    labels={metrica: "Valor de la métrica", "nombre_jugador": "Jugador", "ranking_valor": "Valor ranking"}
 )
 
 fig5.update_traces(textangle = 0, textposition = "outside", cliponaxis = False) # Posiciona el número al lado de la barra (ángulo 0, posición fuera, cliponaxis = False evita que se corte el número)
@@ -245,13 +261,12 @@ st.subheader("6. Minutos jugados, calificación media y valor de mercado")
 st.sidebar.header("Filtros del gráfico 6")
 
 todas6 = st.sidebar.checkbox("Todas las selecciones", key="todas6")
-selecciones6 = st.sidebar.multiselect("Selecciones", SELECCIONES, disabled=todas6, key="selecciones6") 
+selecciones6 = st.sidebar.multiselect("Selecciones", SELECCIONES, default=["Spain"], disabled=todas6, key="selecciones6") 
 if todas6:
     selecciones6 = SELECCIONES
-posiciones6 = st.sidebar.multiselect("Posiciones", jugadores["posicion"].unique(), key="posiciones6")
+posiciones6 = st.sidebar.multiselect("Posiciones", jugadores["posicion"].unique(), default=list(jugadores["posicion"].unique()), key="posiciones6")
 
-j6 = jugadores[(jugadores["minutos_jugados"] > 0) &  # quitamos a quien no ha jugado ningún minuto
-               jugadores["seleccion_nacional"].isin(selecciones6) 
+j6 = jugadores[jugadores["seleccion_nacional"].isin(selecciones6) 
                & jugadores["posicion"].isin(posiciones6)].copy()
 
 j6["ha_marcado"] = "NO"
@@ -315,8 +330,8 @@ p["indice_arbitral"] = eventos.groupby("index_partido")["peso"].sum()
 p["indice_arbitral"] = p["indice_arbitral"].fillna(0)
 
 st.sidebar.header("Filtros del gráfico 8")
-rondas8 = st.sidebar.multiselect("Ronda", partidos["ronda"].unique(), key="rondas8")
-todas8 = st.sidebar.checkbox("Todas las selecciones", key="todas8")
+rondas8 = st.sidebar.multiselect("Ronda", partidos["ronda"].unique(), default=list(partidos["ronda"].unique()), key="rondas8")
+todas8 = st.sidebar.checkbox("Todas las selecciones", key="todas8", value= True) # value= True: todas seleccionado al abrir la app
 selecciones8 = st.sidebar.multiselect("Selecciones", SELECCIONES, disabled=todas8, key="selecciones8")
 if todas8:
     selecciones8 = SELECCIONES
